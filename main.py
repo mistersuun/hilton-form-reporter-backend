@@ -1,9 +1,12 @@
+# main.py
+
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from tempfile import TemporaryDirectory
 from zipfile import ZipFile
-import io, pathlib
+import io
+import pathlib
 
 from generation import run_reporter
 
@@ -24,6 +27,7 @@ async def generate(
     excel: UploadFile = File(...),
     template: UploadFile = File(...)
 ):
+    # Vérification des extensions
     if not excel.filename.lower().endswith((".xls", ".xlsx")):
         raise HTTPException(400, "Format Excel invalide")
     if not template.filename.lower().endswith(".docx"):
@@ -41,7 +45,14 @@ async def generate(
             f.write(await template.read())
 
         out_dir = tmpdir / "output"
-        run_reporter(excel_fp, tpl_fp, out_dir)
+        try:
+            run_reporter(excel_fp, tpl_fp, out_dir)
+        except HTTPException:
+            # Permet de remonter les 400 personnalisés de run_reporter
+            raise
+        except Exception as e:
+            # Tout autre échec devient une 400 plutôt qu'une 500
+            raise HTTPException(400, f"Erreur lors du traitement du fichier : {e}")
 
         # Crée le ZIP en mémoire
         buf = io.BytesIO()

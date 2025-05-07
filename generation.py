@@ -1,3 +1,5 @@
+# generation.py
+
 import re
 import pathlib
 from datetime import datetime
@@ -5,20 +7,21 @@ import pandas as pd
 from docx import Document
 from docx.table import _Cell
 from docx.text.paragraph import Paragraph
+from fastapi import HTTPException
 
 # Symboles pour Oui/Non
 CHECKED, UNCHECKED = "☑", "☐"
 
 # Mapping des colonnes Excel vers balises du template
 MAP = {
-    "Nom du candidat":              "NOM",
-    "Date prise de références":     "DATE_PR",
-    "Statut":                       "STATUT",
-    "Département":                  "POSTE",
-    "Candidature retenue ou non":   "RETENU",
-    "Date entrevue personne":       "DATE_ENT_PERS",
-    "Candidat rejoint oui/non":     "REJOINT",
-    "Date entrevue téléphonique":   "DATE_ENT_TEL",
+    "Nom du candidat":            "NOM",
+    "Date prise de références":   "DATE_PR",
+    "Statut":                     "STATUT",
+    "Département":                "POSTE",
+    "Candidature retenue ou non": "RETENU",
+    "Date entrevue personne":     "DATE_ENT_PERS",
+    "Candidat rejoint oui/non":   "REJOINT",
+    "Date entrevue téléphonique": "DATE_ENT_TEL",
 }
 
 def _iter_paragraphs_and_cells(doc: Document):
@@ -36,7 +39,6 @@ def _rewrite_runs(obj: Paragraph | _Cell, new_text: str):
         for p in obj.paragraphs:
             _rewrite_runs(p, new_text)
         return
-    # vide tous les runs puis écris le nouveau texte dans le premier
     for r in obj.runs:
         r.text = ""
     if obj.runs:
@@ -71,31 +73,28 @@ def mark_choice(obj: Paragraph | _Cell, keyword: str, yes_selected: bool):
     return True
 
 def run_reporter(excel_fp: pathlib.Path, tpl_fp: pathlib.Path, out_dir: pathlib.Path):
-    df = pd.read_excel(excel_fp, header=None, dtype=str)
-    # repère la ligne d'en-têtes
-    hdr_idx = df.index[
-        df.apply(lambda row: row.astype(str)
-                 .str.contains("Nom du candidat", case=False, na=False)
-                 .any(), axis=1)
-    ][0]
-    headers = df.iloc[hdr_idx].fillna("").tolist()
-    data = df.iloc[hdr_idx+1:].reset_index(drop=True)
-    data.columns = headers
+    # Lecture avec la première ligne comme entêtes
+    df = pd.read_excel(excel_fp, dtype=str)
+    # Vérifie la présence de la colonne principale
+    if "Nom du candidat" not in df.columns:
+        raise HTTPException(400, 'Le fichier Excel doit contenir la colonne "Nom du candidat".')
+    # Netoyer les NaN et forcer en str
+    df = df.fillna("").astype(str)
 
     stamp = datetime.now().strftime("%Y%m%d")
     out_dir.mkdir(exist_ok=True)
 
-    for _, row in data.iterrows():
-        nom = str(row.get("Nom du candidat","")).strip()
-        if not nom or nom.lower()=="nan":
+    for _, row in df.iterrows():
+        nom = row.get("Nom du candidat", "").strip()
+        if not nom:
             continue
 
         vals = {}
         for col, key in MAP.items():
             raw = row.get(col, "")
-            v = str(raw).strip()
+            v = raw.strip()
             v = re.sub(r"\s+00:00:00$", "", v)
-            vals[key] = v if v and v.lower()!="nan" else "N/A"
+            vals[key] = v if v and v.lower() != "nan" else "N/A"
 
         retenu = vals["RETENU"].lower().startswith("oui")
         rejoint = vals["REJOINT"].lower().startswith("oui")
@@ -113,5 +112,5 @@ def run_reporter(excel_fp: pathlib.Path, tpl_fp: pathlib.Path, out_dir: pathlib.
             mark_choice(obj, "Candidat retenu", retenu)
             mark_choice(obj, "Message laissé", rejoint)
 
-        out_name = f"Form_{nom.replace(' ','_')}_{stamp}.docx"
+        out_name = f"Form_{nom.replace(' ', '_')}_{stamp}.docx"
         doc.save(out_dir / out_name)
