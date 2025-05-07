@@ -48,13 +48,13 @@ async def generate(
         try:
             run_reporter(excel_fp, tpl_fp, out_dir)
         except HTTPException:
-            # Permet de remonter les 400 personnalisés de run_reporter
+            # Remonte les 400 personnalisés
             raise
         except Exception as e:
-            # Tout autre échec devient une 400 plutôt qu'une 500
-            raise HTTPException(400, f"Erreur lors du traitement du fichier : {e}")
+            # Autres erreurs en 400
+            raise HTTPException(400, f"Erreur lors du traitement : {e}")
 
-        # Crée le ZIP en mémoire
+        # Création du ZIP en mémoire
         buf = io.BytesIO()
         with ZipFile(buf, "w") as zipf:
             for file in out_dir.glob("*.docx"):

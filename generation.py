@@ -73,12 +73,14 @@ def mark_choice(obj: Paragraph | _Cell, keyword: str, yes_selected: bool):
     return True
 
 def run_reporter(excel_fp: pathlib.Path, tpl_fp: pathlib.Path, out_dir: pathlib.Path):
-    # Lecture avec la première ligne comme entêtes
-    df = pd.read_excel(excel_fp, dtype=str)
+    # On saute la première ligne vide pour lire les vrais en-têtes à la ligne 2
+    df = pd.read_excel(excel_fp, header=1, dtype=str)
+
     # Vérifie la présence de la colonne principale
     if "Nom du candidat" not in df.columns:
-        raise HTTPException(400, 'Le fichier Excel doit contenir la colonne "Nom du candidat".')
-    # Netoyer les NaN et forcer en str
+        raise HTTPException(400, 'Le fichier Excel doit contenir la colonne "Nom du candidat" à la ligne 2.')
+
+    # Nettoie et force tout en str
     df = df.fillna("").astype(str)
 
     stamp = datetime.now().strftime("%Y%m%d")
